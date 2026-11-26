@@ -1,0 +1,137 @@
+{% extends 'admin/base_admin.html' %}
+{% load static %}
+{% block content %}
+<main class="container py-4">
+
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+    <div>
+      <h1 class="h3 mb-1">Precios de flores</h1>
+      {% if hay_datos %}
+        <p class="text-body-secondary mb-0">{{ mercado }} · boletín del <strong>{{ ultima }}</strong>
+          {% if anterior != "—" %}(variación vs. {{ anterior }}){% endif %}</p>
+      {% endif %}
+    </div>
+        <div class="d-flex flex-wrap gap-2">
+        <a href="https://reportes.odepa.gob.cl/powerBI/boletin_flores.html" target="_blank" rel="noopener noreferrer"
+            class="btn btn-lg btn-outline-success">ODEPA Boletín</a>
+        <button class="btn btn-lg btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#subir">Subir boletín</button>
+        </div>
+    
+  </div>
+
+  {% for m in messages %}<div class="alert alert-success py-2">{{ m }}</div>{% endfor %}
+
+  <div class="collapse {% if not hay_datos or form.errors %}show{% endif %} mb-4" id="subir">
+    <div class="card card-body">
+      <form method="post" enctype="multipart/form-data" class="row g-2 align-items-end" id="form-subir">
+        {% csrf_token %}
+        <div class="col-12 col-md">
+          <label for="{{ form.archivo.id_for_label }}" class="form-label">{{ form.archivo.label }}</label>
+          <input type="file" name="archivo" id="{{ form.archivo.id_for_label }}" accept=".xlsx"
+                 class="form-control {% if form.errors %}is-invalid{% endif %}" required>
+          {% for e in form.archivo.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+          {% for e in form.non_field_errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+        </div>
+        <div class="col-12 col-md-auto"><button class="btn btn-primary w-100" type="submit" id="btn-subir">Subir y calcular</button></div>
+      </form>
+      <div class="form-text">Reemplaza al boletín anterior y solo se guardan los datos del año en curso. Tarda unos 5 segundos.</div>
+    </div>
+  </div>
+
+  {% if hay_datos %}
+
+  {% if destacados %}
+  <div class="row g-3 mb-4">
+    {% for f in destacados %}
+    <div class="col-12 col-md-6 col-lg-4">
+      <div class="card h-100 shadow-sm"><div class="card-body">
+        <div class="text-body-secondary small">{{ f.especie }} {{ f.variedad|lower }} · {{ f.calidad }}</div>
+        <div class="display-6 fw-semibold my-1">{{ f.precio }}</div>
+        <div class="small text-body-secondary mb-2">{{ f.unidad }} · {{ f.origen }}</div>
+        {% if f.tendencia == "sube" %}<span class="badge text-bg-success">▲ {{ f.var }}</span>
+        {% elif f.tendencia == "baja" %}<span class="badge text-bg-danger">▼ {{ f.var }}</span>
+        {% else %}<span class="badge text-bg-secondary">{{ f.var }}</span>{% endif %}
+        <span class="small text-body-secondary ms-1">antes {{ f.precio_anterior }}</span>
+      </div></div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if subidas or bajadas %}
+  <div class="row g-3 mb-4">
+    <div class="col-12 col-lg-6">
+      <div class="card h-100"><div class="card-header text-success fw-semibold">Mayores subidas</div>
+        <ul class="list-group list-group-flush">
+          {% for f in subidas %}
+          <li class="list-group-item d-flex justify-content-between align-items-center">
+            <span>{{ f.especie }} · {{ f.variedad }}<br><small class="text-body-secondary">{{ f.calidad }} · {{ f.unidad }}</small></span>
+            <span class="text-end">{{ f.precio }}<br><span class="badge text-bg-success">▲ {{ f.var }}</span></span>
+          </li>{% empty %}<li class="list-group-item text-body-secondary">Sin subidas.</li>{% endfor %}
+        </ul></div>
+    </div>
+    <div class="col-12 col-lg-6">
+      <div class="card h-100"><div class="card-header text-danger fw-semibold">Mayores bajadas</div>
+        <ul class="list-group list-group-flush">
+          {% for f in bajadas %}
+          <li class="list-group-item d-flex justify-content-between align-items-center">
+            <span>{{ f.especie }} · {{ f.variedad }}<br><small class="text-body-secondary">{{ f.calidad }} · {{ f.unidad }}</small></span>
+            <span class="text-end">{{ f.precio }}<br><span class="badge text-bg-danger">▼ {{ f.var }}</span></span>
+          </li>{% empty %}<li class="list-group-item text-body-secondary">Sin bajadas.</li>{% endfor %}
+        </ul></div>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <div class="card-header">
+      <form method="get" class="row g-2 align-items-center">
+        <div class="col-12 col-lg"><span class="fw-semibold">Ver precios de flores</span>
+          <span class="text-body-secondary small ms-1">({{ tabla|length }} de {{ n_productos }})</span></div>
+        <div class="col-6 col-lg-3">
+          <select name="mercado" class="form-select form-select-sm" aria-label="Mercado" onchange="this.form.submit()">
+            {% for m in mercados %}<option value="{{ m }}" {% if m == mercado %}selected{% endif %}>{{ m }}</option>{% endfor %}
+          </select></div>
+        <div class="col-6 col-lg-2">
+          <select name="especie" class="form-select form-select-sm" aria-label="Especie" onchange="this.form.submit()">
+            <option value="Todas" {% if especie == "Todas" %}selected{% endif %}>Todas las especies</option>
+            {% for e in especies %}<option value="{{ e }}" {% if e == especie %}selected{% endif %}>{{ e }}</option>{% endfor %}
+          </select></div>
+        <div class="col-12 col-lg-3">
+          <input type="search" id="buscar" class="form-control form-control-sm" placeholder="Buscar variedad, calidad…"></div>
+      </form>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0" id="tabla-precios">
+        <thead class="table"><tr>
+          <th>Especie</th><th>Variedad</th><th>Calidad</th><th>Unidad</th><th>Origen</th>
+          <th class="text-end">Precio</th><th class="text-end">Var.</th></tr></thead>
+        <tbody>
+        {% for f in tabla %}
+          <tr><td>{{ f.especie }}</td><td>{{ f.variedad }}</td><td>{{ f.calidad }}</td><td>{{ f.unidad }}</td><td>{{ f.origen }}</td>
+            <td class="text-end fw-semibold">{{ f.precio }}</td>
+            <td class="text-end {% if f.tendencia == 'sube' %}text-success{% elif f.tendencia == 'baja' %}text-danger{% else %}text-body-secondary{% endif %}">{{ f.var }}</td></tr>
+        {% empty %}
+          <tr><td colspan="7" class="text-center text-body-secondary py-4">Sin precios en el último boletín.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="card-footer small text-body-secondary">Cada precio está en su unidad; unidades distintas no son comparables entre sí.</div>
+  </div>
+  {% endif %}
+</main>
+<script>
+  const q = document.getElementById('buscar');
+  if (q) q.addEventListener('input', () => {
+    const t = q.value.toLowerCase();
+    document.querySelectorAll('#tabla-precios tbody tr').forEach(tr => {
+      tr.hidden = t && !tr.textContent.toLowerCase().includes(t);
+    });
+  });
+  document.getElementById('form-subir').addEventListener('submit', () => {
+    const b = document.getElementById('btn-subir');
+    b.disabled = true; b.textContent = 'Procesando…';
+  });
+</script>
+{% endblock %}
