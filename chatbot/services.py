@@ -1,23 +1,22 @@
 """
-Boletín de flores: lectura del Excel y métricas. Sin modelos y sin pandas.
+Boletín de flores: lectura del Excel y métricas. Sin pandas.
 
-Flujo (liviano):
+Flujo:
   1. Se sube el Excel (martes y jueves) -> se leen SOLO las filas del año ANIO.
-  2. Esas filas se guardan en un JSON chico (media/boletin/boletin_2026.json) que reemplaza al anterior.
-     El Excel subido no se conserva.
-  3. Cada visita lee ese JSON (milisegundos) y se queda en memoria hasta que se suba otro.
-El JSON también sirve como fuente de datos para el chatbot.
+  2. Esas filas se guardan en la base de datos (modelo Boletin, un registro por año)
+     y reemplazan al anterior. El Excel subido no se conserva.
+  3. Cada visita lee las filas desde la base de datos y las mantiene en memoria
+     hasta que se suba otro boletín.
+Compatible con Vercel: no escribe nada en el disco.
 """
-import json
 import warnings
 from datetime import date, datetime
-from pathlib import Path
 
-from django.conf import settings
 from openpyxl import load_workbook
 
+from .models import Boletin
+
 ANIO = 2026
-RUTA = Path(settings.MEDIA_ROOT) / "boletin" / f"boletin_{ANIO}.json"
 
 # Encabezado del Excel -> nombre interno
 COLUMNAS = {
@@ -34,7 +33,8 @@ DESTACADOS = [
     ("Rosa", "Rojas", "Primera 70 cms."),
 ]
 
-_CACHE = {"mtime": None, "filas": None}
+# Caché en memoria (cada instancia de Vercel tiene la suya).
+_CACHE = {"version": None, "filas": None}
 
 
 class BoletinInvalido(Exception):
@@ -88,12 +88,8 @@ def leer_excel(archivo) -> list:
 def guardar_boletin(archivo) -> int:
     """Valida el Excel, deja solo las filas del año como boletín vigente y devuelve cuántas son."""
     filas = leer_excel(archivo)
-    RUTA.parent.mkdir(parents=True, exist_ok=True)
-    tmp = RUTA.with_suffix(".tmp")
-    tmp.write_text(json.dumps({"anio": ANIO, "columnas": NOMBRES, "filas": filas},
-                              ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-    tmp.replace(RUTA)  # reemplazo atómico: nadie lee un archivo a medias
-    _CACHE.update(mtime=RUTA.stat().st_mtime, filas=_a_dicts(filas))
+    Boletin.objects.update_or_create(anio=ANIO, defaults={"filas": filas})
+    _CACHE.update(version=None, filas=None)  # fuerza a recargar desde la base de datos
     return len(filas)
 
 
@@ -103,14 +99,19 @@ def _a_dicts(filas) -> list:
 
 def cargar_boletin():
     """Filas (dicts) del boletín vigente, o None si todavía no se ha subido ninguno."""
-    if not RUTA.exists():
+    # Consulta liviana: solo la fecha de actualización, para saber si cambió el boletín.
+    version = (
+        Boletin.objects.filter(anio=ANIO)
+        .values_list("actualizado", flat=True)
+        .first()
+    )
+    if version is None:
         return None
-    mtime = RUTA.stat().st_mtime
-    if _CACHE["mtime"] != mtime:
+    if _CACHE["version"] != version:
         try:
-            contenido = json.loads(RUTA.read_text(encoding="utf-8"))
-            _CACHE.update(mtime=mtime, filas=_a_dicts(contenido["filas"]))
-        except (ValueError, KeyError) as exc:
+            boletin = Boletin.objects.get(anio=ANIO)
+            _CACHE.update(version=boletin.actualizado, filas=_a_dicts(boletin.filas))
+        except (TypeError, ValueError) as exc:
             raise BoletinInvalido("El boletín guardado está dañado; sube el Excel otra vez.") from exc
     return _CACHE["filas"]
 
