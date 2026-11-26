@@ -26,6 +26,7 @@ INSTALLED_APPS = [
     'tienda',
     'carrito',
     'pedidos',
+    'chatbot',
     'chatbot_usuario',
     'django_browser_reload',
     'django.contrib.humanize',
