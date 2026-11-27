@@ -26,6 +26,7 @@ INSTALLED_APPS = [
     'tienda',
     'carrito',
     'pedidos',
+    'chatbot',
     'chatbot_usuario',
     'django_browser_reload',
     'django.contrib.humanize',
@@ -115,6 +116,8 @@ CLOUDINARY_STORAGE = {
     "API_KEY": os.environ["CLOUDINARY_API_KEY"],
     "API_SECRET": os.environ["CLOUDINARY_API_SECRET"],
 }
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 
 STORAGES = {
     "default": {"BACKEND": "cloudinary_storage.storage.MediaCloudinaryStorage"},

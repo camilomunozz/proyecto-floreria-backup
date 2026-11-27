@@ -5,7 +5,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // CONFIGURACIÓN
     // =========================================
 
-    const API_URL = "/chatbot/api/chat/";
+    const API_URL = "/chatbot_usuario/api/chat/";
     const CART_URL = "/carrito/agregar/";
 
     const toggleButton = document.getElementById("chatbot-toggle");

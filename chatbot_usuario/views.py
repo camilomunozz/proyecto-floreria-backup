@@ -1,12 +1,8 @@
 
-
-import os
 import json
 import logging
 import re
 import unicodedata
-
-from decimal import Decimal, InvalidOperation
 
 from groq import (
     Groq,
@@ -16,326 +12,294 @@ from groq import (
     APIStatusError,
 )
 
+from django.conf import settings
 from django.http import JsonResponse
 from django.views.decorators.http import require_POST
 from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.cache import never_cache
 
-from tienda.models import Producto, Categoria, Tipo, Ocasion
+from tienda.models import Producto
+
 from rapidfuzz import fuzz, process
 
 
 logger = logging.getLogger(__name__)
 
 
+# ==========================================================
+# NORMALIZACIÓN DE TEXTO
+# ==========================================================
+
 def normalizar_texto(texto):
-    """Elimina tildes y convierte el texto a minúsculas."""
-    texto = unicodedata.normalize("NFD", texto.lower())
-    return "".join(
-        caracter for caracter in texto
+    texto = str(texto or "").lower().strip()
+
+    texto = unicodedata.normalize("NFD", texto)
+
+    texto = "".join(
+        caracter
+        for caracter in texto
         if unicodedata.category(caracter) != "Mn"
     )
 
+    texto = re.sub(r"[^a-z0-9\s]", " ", texto)
+    texto = re.sub(r"\s+", " ", texto)
 
-def buscar_coincidencias_inteligentes(
-    consulta,
-    opciones,
-    limite=3,
-    puntuacion_minima=75
-):
-    """Busca coincidencias aproximadas."""
+    return texto.strip()
 
-    if not consulta or not opciones:
-        return []
 
+# ==========================================================
+# BÚSQUEDA INTELIGENTE DE PRODUCTOS
+# ==========================================================
+
+def buscar_coincidencias_inteligentes(consulta, nombres, limite=3):
     consulta = normalizar_texto(consulta)
 
-    opciones_normalizadas = {
-        normalizar_texto(opcion): opcion
-        for opcion in opciones
-        if opcion
-    }
+    if not consulta or not nombres:
+        return []
+
+    nombres_normalizados = [
+        normalizar_texto(nombre)
+        for nombre in nombres
+    ]
 
     resultados = process.extract(
         consulta,
-        list(opciones_normalizadas.keys()),
-        scorer=fuzz.ratio,
+        nombres_normalizados,
+        scorer=fuzz.WRatio,
         limit=limite,
-        score_cutoff=puntuacion_minima
+        score_cutoff=75
     )
 
     return [
-        opciones_normalizadas[coincidencia]
+        {
+            "nombre": nombres[indice],
+            "coincidencia": puntuacion
+        }
         for coincidencia, puntuacion, indice in resultados
     ]
 
 
-def extraer_presupuesto(mensaje):
-    """Detecta presupuestos máximos, mínimos y exactos."""
+# ==========================================================
+# EXTRACCIÓN DE PRESUPUESTO
+# ==========================================================
 
+def extraer_presupuesto(mensaje):
     texto = normalizar_texto(mensaje)
 
     patrones = [
-        (
-            "exacto",
-            r"(?:exactamente(?:\s+a)?|igual\s+a|por\s+un\s+valor\s+de)\s*\$?\s*([\d.,]+)"
-        ),
-        (
-            "minimo",
-            r"(?:mas\s+de|superior\s+a|sobre|desde|a\s+partir\s+de)\s*\$?\s*([\d.,]+)"
-        ),
-        (
-            "maximo",
-            r"(?:menos\s+de|inferior\s+a|bajo|hasta|como\s+maximo|maximo\s+de)\s*\$?\s*([\d.,]+)"
-        ),
-        (
-            "maximo",
-            r"\$\s*([\d.,]+)"
-        ),
+        r"(?:exactamente|exacto|por)\s*\$?\s*([\d.,]+)",
+        r"(?:menos de|hasta|maximo)\s*\$?\s*([\d.,]+)",
+        r"(?:mas de|minimo)\s*\$?\s*([\d.,]+)",
     ]
 
-    for tipo, patron in patrones:
-        coincidencia = re.search(patron, texto, re.IGNORECASE)
+    for patron in patrones:
+        coincidencia = re.search(patron, texto)
 
         if coincidencia:
-            monto = re.sub(r"\D", "", coincidencia.group(1))
+            valor = coincidencia.group(1)
+            valor = valor.replace(".", "").replace(",", "")
 
-            if monto:
-                try:
-                    return tipo, Decimal(monto)
-                except InvalidOperation:
-                    return None, None
+            try:
+                return int(valor)
+            except ValueError:
+                return None
 
-    return None, None
+    coincidencia = re.search(r"\$?\s*(\d{4,})", texto)
 
+    if coincidencia:
+        try:
+            return int(coincidencia.group(1))
+        except ValueError:
+            return None
+
+    return None
+
+
+# ==========================================================
+# EXTRACCIÓN DE FILTROS
+# ==========================================================
 
 def obtener_filtros(mensaje):
-    """
-    Detecta características, categorías, tipos y ocasiones
-    tolerando diferencias de escritura y singular/plural.
-    """
-
     texto = normalizar_texto(mensaje)
-    palabras_consulta = re.findall(r"\b[a-z]{4,}\b", texto)
 
-    filtros = {
-        "palabras": [],
-        "categoria": [],
-        "tipo": [],
-        "ocasion": [],
+    presupuesto = extraer_presupuesto(mensaje)
+
+    tipo_presupuesto = None
+
+    if any(p in texto for p in ["exactamente", "exacto"]):
+        tipo_presupuesto = "exacto"
+
+    elif any(p in texto for p in ["menos de", "hasta", "maximo"]):
+        tipo_presupuesto = "maximo"
+
+    elif any(p in texto for p in ["mas de", "minimo"]):
+        tipo_presupuesto = "minimo"
+
+    return {
+        "presupuesto": presupuesto,
+        "tipo_presupuesto": tipo_presupuesto,
     }
 
-    caracteristicas = [
-        "rojo", "blanco", "rosado", "amarillo",
-        "azul", "morado", "lila",
-        "tulipan", "rosa", "girasol",
-        "orquidea", "lirio",
-    ]
 
-    for palabra in palabras_consulta:
-        coincidencia = process.extractOne(
-            palabra,
-            caracteristicas,
-            scorer=fuzz.ratio,
-            score_cutoff=88
-        )
+# ==========================================================
+# OBTENER PRODUCTOS DISPONIBLES
+# ==========================================================
 
-        if coincidencia:
-            caracteristica = coincidencia[0]
-
-            if caracteristica not in filtros["palabras"]:
-                filtros["palabras"].append(caracteristica)
-
-    modelos = {
-        "categoria": Categoria,
-        "tipo": Tipo,
-        "ocasion": Ocasion,
-    }
-
-    for clave, modelo in modelos.items():
-
-        nombres = modelo.objects.values_list("nombre", flat=True)
-
-        for nombre in nombres:
-            nombre_normalizado = normalizar_texto(nombre)
-
-            palabras_nombre = re.findall(
-                r"\b[a-z]{4,}\b",
-                nombre_normalizado
-            )
-
-            for palabra in palabras_consulta:
-
-                coincidencia = process.extractOne(
-                    palabra,
-                    palabras_nombre,
-                    scorer=fuzz.ratio,
-                    score_cutoff=88
-                )
-
-                if coincidencia:
-                    if nombre not in filtros[clave]:
-                        filtros[clave].append(nombre)
-                    break
-
-    return filtros
-
-
-def obtener_productos(mensaje, request=None):
-    """
-    Busca productos reales aplicando coincidencias aproximadas
-    y los criterios detectados en el mensaje.
-    """
-
-    tipo_presupuesto, presupuesto = extraer_presupuesto(mensaje)
+def obtener_productos(mensaje="", request=None):
     filtros = obtener_filtros(mensaje)
 
-    productos = Producto.objects.filter(
-        disponible=True,
-        stock__gt=0
-    ).select_related(
-        "tipo",
-        "categoria",
-        "ocasion"
+    productos = (
+        Producto.objects
+        .filter(
+            disponible=True,
+            stock__gt=0
+        )
+        .select_related(
+            "tipo",
+            "categoria",
+            "ocasion"
+        )
     )
 
-    # Presupuesto.
+    presupuesto = filtros["presupuesto"]
+    tipo_presupuesto = filtros["tipo_presupuesto"]
+
     if presupuesto is not None:
 
-        if tipo_presupuesto == "maximo":
-            productos = productos.filter(precio__lte=presupuesto)
+        if tipo_presupuesto == "exacto":
+            productos = productos.filter(
+                precio=presupuesto
+            )
+
+        elif tipo_presupuesto == "maximo":
+            productos = productos.filter(
+                precio__lte=presupuesto
+            )
 
         elif tipo_presupuesto == "minimo":
-            productos = productos.filter(precio__gte=presupuesto)
-
-        elif tipo_presupuesto == "exacto":
-            productos = productos.filter(precio=presupuesto)
-
-    # Comparación aproximada entre palabras.
-    def coincide_texto(consulta, contenido):
-
-        consulta = normalizar_texto(consulta)
-        contenido = normalizar_texto(contenido)
-
-        palabras = re.findall(r"\b[a-z]{3,}\b", consulta)
-        palabras_contenido = re.findall(
-            r"\b[a-z]{3,}\b",
-            contenido
-        )
-
-        return all(
-            any(
-                fuzz.ratio(palabra, palabra_producto) >= 88
-                for palabra_producto in palabras_contenido
+            productos = productos.filter(
+                precio__gte=presupuesto
             )
-            for palabra in palabras
-        )
 
-    productos_filtrados = []
+    productos = productos.order_by("precio")[:30]
 
-    for producto in productos:
+    nombres = [
+        producto.nombre
+        for producto in productos
+    ]
 
-        contenido = " ".join([
-            producto.nombre or "",
-            producto.descripcion or "",
-            producto.categoria.nombre if producto.categoria else "",
-            producto.tipo.nombre if producto.tipo else "",
-            producto.ocasion.nombre if producto.ocasion else "",
-        ])
+    coincidencias = buscar_coincidencias_inteligentes(
+        mensaje,
+        nombres
+    )
 
-        coincide = True
+    nombres_coincidentes = {
+        item["nombre"]
+        for item in coincidencias
+    }
 
-        # Características y colores.
-        for palabra in filtros["palabras"]:
-            if not coincide_texto(palabra, contenido):
-                coincide = False
-                break
-
-        # Categorías.
-        if coincide:
-            for categoria in filtros["categoria"]:
-                if not coincide_texto(categoria, contenido):
-                    coincide = False
-                    break
-
-        # Tipos.
-        if coincide:
-            for tipo in filtros["tipo"]:
-                if not coincide_texto(tipo, contenido):
-                    coincide = False
-                    break
-
-        # Ocasiones.
-        if coincide:
-            for ocasion in filtros["ocasion"]:
-                if not coincide_texto(ocasion, contenido):
-                    coincide = False
-                    break
-
-        if coincide:
-            productos_filtrados.append(producto)
-
-    productos = sorted(
-        productos_filtrados,
-        key=lambda producto: producto.precio
-    )[:3]
-
-    catalogo = []
     tarjetas = []
+    catalogo = []
 
     for producto in productos:
 
         imagen_url = None
 
-        if producto.imagen:
-            imagen_url = producto.imagen.url
+        try:
+            if producto.imagen:
+                imagen_url = producto.imagen.url
 
-            if request:
-                imagen_url = request.build_absolute_uri(imagen_url)
+                if request:
+                    imagen_url = request.build_absolute_uri(
+                        imagen_url
+                    )
 
-        descripcion = producto.descripcion or ""
+        except Exception:
+            logger.warning(
+                "No se pudo obtener la imagen del producto %s",
+                producto.pk
+            )
 
-        catalogo.append({
+        datos_producto = {
+            "id": producto.pk,
             "nombre": producto.nombre,
             "precio": str(producto.precio),
-            "descripcion": descripcion,
-            "tipo": producto.tipo.nombre if producto.tipo else None,
+            "descripcion": producto.descripcion or "",
             "categoria": (
-                producto.categoria.nombre
+                str(producto.categoria)
                 if producto.categoria else None
             ),
+            "tipo": (
+                str(producto.tipo)
+                if producto.tipo else None
+            ),
             "ocasion": (
-                producto.ocasion.nombre
+                str(producto.ocasion)
                 if producto.ocasion else None
             ),
-        })
-
-        tarjetas.append({
-            "id": producto.id,
-            "nombre": producto.nombre,
-            "precio": str(producto.precio),
-            "descripcion": descripcion[:140],
             "imagen": imagen_url,
-        })
+        }
 
-    return catalogo, tarjetas, filtros, tipo_presupuesto, presupuesto
+        catalogo.append(datos_producto)
 
+        # Priorizar productos relacionados con la consulta.
+        if (
+            nombres_coincidentes
+            and producto.nombre not in nombres_coincidentes
+        ):
+            continue
+
+        tarjetas.append(datos_producto)
+
+    # Si no existen coincidencias, mostrar productos disponibles.
+    if not tarjetas:
+        tarjetas = catalogo[:3]
+
+    return {
+        "catalogo": catalogo,
+        "tarjetas": tarjetas[:3],
+        "filtros": filtros,
+        "presupuesto": presupuesto,
+    }
+
+
+# ==========================================================
+# ENDPOINT DEL CHATBOT
+# ==========================================================
 
 @require_POST
 @csrf_protect
 @never_cache
 def chat(request):
+    
+    logger.warning(
+    "CHATBOT USUARIO EJECUTADO | Usuario autenticado: %s | Ruta: %s",
+    request.user.is_authenticated,
+    request.path
+)
 
     try:
-        data = json.loads(request.body)
 
-        if not isinstance(data, dict):
+        # --------------------------------------------------
+        # VALIDAR JSON
+        # --------------------------------------------------
+
+        try:
+            datos = json.loads(request.body)
+
+        except (json.JSONDecodeError, UnicodeDecodeError):
             return JsonResponse(
-                {"error": "La solicitud debe contener un objeto JSON."},
+                {"error": "El mensaje enviado no tiene un formato válido."},
                 status=400
             )
 
-        mensaje = data.get("mensaje", "")
+        if not isinstance(datos, dict):
+            return JsonResponse(
+                {"error": "El formato del mensaje no es válido."},
+                status=400
+            )
+
+        mensaje = datos.get("mensaje", "")
 
         if not isinstance(mensaje, str):
             return JsonResponse(
@@ -347,7 +311,7 @@ def chat(request):
 
         if not mensaje:
             return JsonResponse(
-                {"error": "Debes escribir un mensaje."},
+                {"error": "Escribe un mensaje para continuar."},
                 status=400
             )
 
@@ -357,85 +321,83 @@ def chat(request):
                 status=400
             )
 
-        api_key = os.environ.get("GROQ_API_KEY")
+        # --------------------------------------------------
+        # VALIDAR API KEY
+        # --------------------------------------------------
+
+        api_key = settings.GROQ_API_KEY
 
         if not api_key:
-            logger.error("GROQ_API_KEY no está configurada.")
+            logger.error(
+                "No se encontró GROQ_API_KEY en la configuración."
+            )
 
             return JsonResponse(
-                {
-                    "error": "El servicio de recomendaciones no está configurado."
-                },
+                {"error": "El servicio de atención no está configurado."},
                 status=503
             )
 
-        (
-            catalogo,
-            tarjetas,
-            filtros,
-            tipo_presupuesto,
-            presupuesto
-        ) = obtener_productos(
-            mensaje=mensaje,
-            request=request
+        # --------------------------------------------------
+        # OBTENER PRODUCTOS
+        # --------------------------------------------------
+
+        resultado = obtener_productos(
+            mensaje,
+            request
         )
 
-        if catalogo:
+        catalogo = resultado["catalogo"]
+        tarjetas = resultado["tarjetas"]
+        filtros = resultado["filtros"]
 
-            productos_json = json.dumps(
-                catalogo,
-                ensure_ascii=False,
-                indent=2
-            )
-
-            informacion_catalogo = f"""
-PRODUCTOS REALES ENCONTRADOS:
-
-{productos_json}
-
-Recomienda exclusivamente productos de esta lista.
-"""
-
-        else:
-
-            informacion_catalogo = """
-NO SE ENCONTRARON PRODUCTOS QUE CUMPLAN LOS CRITERIOS.
-
-No inventes productos ni precios.
-Comunica amablemente que no encontramos coincidencias.
-Puedes preguntar si desea cambiar algún criterio.
-"""
+        # --------------------------------------------------
+        # INSTRUCCIONES DEL CHATBOT
+        # --------------------------------------------------
 
         instrucciones = f"""
-Eres el asistente virtual de FlowerView,
-una tienda especializada en arreglos florales.
+Eres el asistente virtual de FlowerView, una tienda online
+especializada en arreglos florales.
 
-REGLAS:
+Tu función es ayudar a los clientes a encontrar productos
+y resolver dudas relacionadas con la tienda.
+
+REGLAS OBLIGATORIAS:
 
 1. Responde siempre en español.
-2. Utiliza un tono amable y profesional.
-3. Responde con un máximo de 80 palabras.
-4. Recomienda exclusivamente productos del catálogo.
-5. Nunca inventes nombres, precios ni disponibilidad.
-6. Respeta todos los criterios solicitados.
-7. Si no hay coincidencias, comunícalo amablemente.
-8. Si necesitas información adicional, realiza una sola pregunta breve.
-9. FlowerView ofrece compra online y retiro en tienda.
-10. No prometas despacho a domicilio.
-11. Cuando recomiendes productos, menciona sus nombres.
-12. No describas características que no estén respaldadas
-    por la información del catálogo.
+2. Utiliza un tono amable, profesional y natural.
+3. Responde de forma breve, con un máximo aproximado de 80 palabras.
+4. No inventes productos, precios, descuentos ni promociones.
+5. Utiliza exclusivamente la información del catálogo proporcionado.
+6. Los precios están expresados en pesos chilenos (CLP).
+7. Si no encuentras un producto adecuado, dilo claramente.
+8. No inventes disponibilidad ni cantidades de stock.
+9. No solicites información bancaria ni contraseñas.
+10. La tienda permite compras online y retiro en tienda.
+11. No prometas despacho a domicilio.
+12. No afirmes que has agregado un producto al carrito.
+13. Si el cliente pregunta por un producto, menciona su nombre
+    y precio cuando estén disponibles.
+14. No muestres información técnica ni detalles internos del sistema.
 
-CRITERIOS DETECTADOS:
+CATÁLOGO DISPONIBLE:
 
-Características: {filtros["palabras"]}
-Categorías: {filtros["categoria"]}
-Tipos: {filtros["tipo"]}
-Ocasiones: {filtros["ocasion"]}
-Presupuesto: {tipo_presupuesto} - {presupuesto}
+{json.dumps(catalogo, ensure_ascii=False, indent=2)}
 
-{informacion_catalogo}
+PRODUCTOS DESTACADOS PARA ESTA CONSULTA:
+
+{json.dumps(tarjetas, ensure_ascii=False, indent=2)}
+
+FILTROS DETECTADOS:
+
+{json.dumps(filtros, ensure_ascii=False, indent=2)}
+
+Recuerda: responde únicamente al cliente, de manera breve
+y utilizando la información disponible.
 """
+
+        # --------------------------------------------------
+        # CONEXIÓN CON GROQ
+        # --------------------------------------------------
 
         cliente = Groq(
             api_key=api_key,
@@ -460,86 +422,78 @@ Presupuesto: {tipo_presupuesto} - {presupuesto}
 
         texto_respuesta = respuesta.choices[0].message.content
 
-        if not texto_respuesta or not texto_respuesta.strip():
-
-            logger.warning("Groq devolvió una respuesta vacía.")
-
-            return JsonResponse(
-                {
-                    "error": "No recibimos una respuesta. Inténtalo nuevamente."
-                },
-                status=502
+        if not texto_respuesta:
+            raise ValueError(
+                "Groq devolvió una respuesta vacía."
             )
+
+        # --------------------------------------------------
+        # RESPUESTA AL FRONTEND
+        # --------------------------------------------------
 
         return JsonResponse({
             "respuesta": texto_respuesta.strip(),
-            "productos": tarjetas
+            "productos": tarjetas,
         })
 
-    except json.JSONDecodeError:
-
-        return JsonResponse(
-            {"error": "La solicitud no contiene JSON válido."},
-            status=400
-        )
+    # ======================================================
+    # MANEJO DE ERRORES
+    # ======================================================
 
     except APITimeoutError:
 
-        logger.warning("Tiempo de espera agotado al consultar Groq.")
+        logger.exception("Tiempo de espera agotado en Groq.")
 
         return JsonResponse(
-            {
-                "error": "El asistente está tardando demasiado. Inténtalo nuevamente."
-            },
+            {"error": "El asistente está tardando demasiado. Inténtalo nuevamente."},
             status=504
         )
 
     except APIConnectionError:
 
-        logger.exception("No se pudo establecer conexión con Groq.")
+        logger.exception("Error de conexión con Groq.")
 
         return JsonResponse(
-            {
-                "error": "No pudimos conectar con el asistente. Inténtalo nuevamente."
-            },
+            {"error": "No se pudo conectar con el asistente."},
             status=503
         )
 
     except RateLimitError:
 
-        logger.warning("Groq alcanzó el límite de solicitudes.")
+        logger.exception("Límite de solicitudes de Groq alcanzado.")
 
         return JsonResponse(
-            {
-                "error": "El asistente ha alcanzado temporalmente su límite de solicitudes."
-            },
+            {"error": "El asistente está ocupado. Inténtalo nuevamente en unos momentos."},
             status=429
         )
 
-    except APIStatusError as e:
+    except APIStatusError:
 
-        logger.exception(
-            "Groq respondió con un error HTTP: %s",
-            e.status_code
-        )
+        logger.exception("Groq devolvió un error de API.")
 
         return JsonResponse(
-            {
-                "error": "El servicio de recomendaciones presentó un problema."
-            },
+            {"error": "El servicio de asistencia no está disponible temporalmente."},
             status=502
         )
 
     except Exception as e:
 
         logger.exception(
-            "Error inesperado en el chatbot: %s",
+            "ERROR REAL DEL CHATBOT: %s",
             type(e).__name__
         )
 
+        if settings.DEBUG:
+            return JsonResponse(
+                {
+                    "error": str(e),
+                    "tipo": type(e).__name__,
+                },
+                status=500
+            )
+
         return JsonResponse(
-            {
-                "error": "No pudimos procesar tu mensaje. Inténtalo nuevamente."
-            },
-            status=502
+            {"error": "No pudimos procesar tu mensaje. Inténtalo nuevamente."},
+            status=500
         )
+
