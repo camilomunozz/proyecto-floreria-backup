@@ -210,35 +210,9 @@ def limpiar_cotizacion(request):
 
 
 #metricas excel
-from django.contrib import messages
-from django.shortcuts import redirect, render
 
-from .forms import SubirBoletinForm
-from .services import ANIO, BoletinInvalido, calcular_metricas, cargar_boletin, guardar_boletin
 
 @role_required('admin')
 def metricas_boletin(request):
-    form = SubirBoletinForm()
-
-    if request.method == "POST":
-        form = SubirBoletinForm(request.POST, request.FILES)
-        if form.is_valid():
-            try:
-                n = guardar_boletin(form.cleaned_data["archivo"])
-            except BoletinInvalido as exc:
-                form.add_error("archivo", str(exc))
-            else:
-                messages.success(request, f"Boletín cargado: {n} precios de {ANIO}.")
-                return redirect("metricas")
-
-    ctx = {"form": form}
-    try:
-        filas = cargar_boletin()
-    except BoletinInvalido as exc:
-        form.add_error(None, str(exc))
-        filas = None
-
-    if filas:
-        ctx.update(calcular_metricas(filas, request.GET.get("mercado"), request.GET.get("especie")))
-        ctx["hay_datos"] = True
-    return render(request, "metricas.html", ctx)
+    """Todo se procesa en el navegador (el Excel no llega al servidor), así que la vista solo muestra la página."""
+    return render(request, "metricas.html")

@@ -6,132 +6,224 @@
   <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
     <div>
       <h1 class="h3 mb-1">Precios de flores</h1>
-      {% if hay_datos %}
-        <p class="text-body-secondary mb-0">{{ mercado }} · boletín del <strong>{{ ultima }}</strong>
-          {% if anterior != "—" %}(variación vs. {{ anterior }}){% endif %}</p>
-      {% endif %}
+      <p class="text-body-secondary mb-0" id="subtitulo">Sube el Excel del boletín para ver los precios.</p>
     </div>
-        <div class="d-flex flex-wrap gap-2">
-        <a href="https://reportes.odepa.gob.cl/powerBI/boletin_flores.html" target="_blank" rel="noopener noreferrer"
-            class="btn btn-lg btn-outline-success">ODEPA Boletín</a>
-        <button class="btn btn-lg btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#subir">Subir boletín</button>
-        </div>
-    
+    <div class="d-flex flex-wrap gap-2">
+      <a href="https://reportes.odepa.gob.cl/powerBI/boletin_flores.html" target="_blank" rel="noopener noreferrer"
+         class="btn btn-lg btn-outline-success">ODEPA Boletín</a>
+      <button class="btn btn-lg btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#subir">Subir boletín</button>
+    </div>
   </div>
 
-  {% for m in messages %}<div class="alert alert-success py-2">{{ m }}</div>{% endfor %}
-
-  <div class="collapse {% if not hay_datos or form.errors %}show{% endif %} mb-4" id="subir">
+  <div class="collapse show mb-4" id="subir">
     <div class="card card-body">
-      <form method="post" enctype="multipart/form-data" class="row g-2 align-items-end" id="form-subir">
-        {% csrf_token %}
-        <div class="col-12 col-md">
-          <label for="{{ form.archivo.id_for_label }}" class="form-label">{{ form.archivo.label }}</label>
-          <input type="file" name="archivo" id="{{ form.archivo.id_for_label }}" accept=".xlsx"
-                 class="form-control {% if form.errors %}is-invalid{% endif %}" required>
-          {% for e in form.archivo.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
-          {% for e in form.non_field_errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+      <label for="archivo" class="form-label">Excel del boletín (.xlsx)</label>
+      <div class="d-flex flex-wrap gap-2 align-items-center">
+        <input type="file" id="archivo" accept=".xlsx" class="form-control" style="max-width:480px">
+        <span id="cargando" class="d-none text-body-secondary">
+          <span class="spinner-border spinner-border-sm me-1" role="status"></span>Procesando…</span>
+      </div>
+      <div id="error" class="alert alert-danger py-2 mt-3 mb-0 d-none"></div>
+      <div class="form-text">Descarga el Excel desde el botón <strong>ODEPA Boletín</strong> y súbelo aquí.
+        Se procesa en tu navegador: no se envía ni se guarda nada en el servidor.</div>
+    </div>
+  </div>
+
+  <div id="resultado" class="d-none">
+    <div class="row g-3 mb-4" id="destacados"></div>
+    <div class="row g-3 mb-4" id="movimientos"></div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="row g-2 align-items-center">
+          <div class="col-12 col-lg"><span class="fw-semibold">Ver precios de flores</span>
+            <span class="text-body-secondary small ms-1" id="contador"></span></div>
+          <div class="col-6 col-lg-3"><select id="f-mercado" class="form-select form-select-sm" aria-label="Mercado"></select></div>
+          <div class="col-6 col-lg-2"><select id="f-especie" class="form-select form-select-sm" aria-label="Especie"></select></div>
+          <div class="col-12 col-lg-3"><input type="search" id="buscar" class="form-control form-control-sm" placeholder="Buscar variedad, calidad…"></div>
         </div>
-        <div class="col-12 col-md-auto"><button class="btn btn-primary w-100" type="submit" id="btn-subir">Subir y calcular</button></div>
-      </form>
-      <div class="form-text">Reemplaza al boletín anterior y solo se guardan los datos del año en curso. Tarda unos 5 segundos.</div>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle mb-0">
+          <thead class="table"><tr>
+            <th>Especie</th><th>Variedad</th><th>Calidad</th><th>Unidad</th><th>Origen</th>
+            <th class="text-end">Precio</th><th class="text-end">Var.</th></tr></thead>
+          <tbody id="tabla"></tbody>
+        </table>
+      </div>
+      <div class="card-footer small text-body-secondary">Cada precio está en su unidad; unidades distintas no son comparables entre sí.</div>
     </div>
   </div>
-
-  {% if hay_datos %}
-
-  {% if destacados %}
-  <div class="row g-3 mb-4">
-    {% for f in destacados %}
-    <div class="col-12 col-md-6 col-lg-4">
-      <div class="card h-100 shadow-sm"><div class="card-body">
-        <div class="text-body-secondary small">{{ f.especie }} {{ f.variedad|lower }} · {{ f.calidad }}</div>
-        <div class="display-6 fw-semibold my-1">{{ f.precio }}</div>
-        <div class="small text-body-secondary mb-2">{{ f.unidad }} · {{ f.origen }}</div>
-        {% if f.tendencia == "sube" %}<span class="badge text-bg-success">▲ {{ f.var }}</span>
-        {% elif f.tendencia == "baja" %}<span class="badge text-bg-danger">▼ {{ f.var }}</span>
-        {% else %}<span class="badge text-bg-secondary">{{ f.var }}</span>{% endif %}
-        <span class="small text-body-secondary ms-1">antes {{ f.precio_anterior }}</span>
-      </div></div>
-    </div>
-    {% endfor %}
-  </div>
-  {% endif %}
-
-  {% if subidas or bajadas %}
-  <div class="row g-3 mb-4">
-    <div class="col-12 col-lg-6">
-      <div class="card h-100"><div class="card-header text-success fw-semibold">Mayores subidas</div>
-        <ul class="list-group list-group-flush">
-          {% for f in subidas %}
-          <li class="list-group-item d-flex justify-content-between align-items-center">
-            <span>{{ f.especie }} · {{ f.variedad }}<br><small class="text-body-secondary">{{ f.calidad }} · {{ f.unidad }}</small></span>
-            <span class="text-end">{{ f.precio }}<br><span class="badge text-bg-success">▲ {{ f.var }}</span></span>
-          </li>{% empty %}<li class="list-group-item text-body-secondary">Sin subidas.</li>{% endfor %}
-        </ul></div>
-    </div>
-    <div class="col-12 col-lg-6">
-      <div class="card h-100"><div class="card-header text-danger fw-semibold">Mayores bajadas</div>
-        <ul class="list-group list-group-flush">
-          {% for f in bajadas %}
-          <li class="list-group-item d-flex justify-content-between align-items-center">
-            <span>{{ f.especie }} · {{ f.variedad }}<br><small class="text-body-secondary">{{ f.calidad }} · {{ f.unidad }}</small></span>
-            <span class="text-end">{{ f.precio }}<br><span class="badge text-bg-danger">▼ {{ f.var }}</span></span>
-          </li>{% empty %}<li class="list-group-item text-body-secondary">Sin bajadas.</li>{% endfor %}
-        </ul></div>
-    </div>
-  </div>
-  {% endif %}
-
-  <div class="card">
-    <div class="card-header">
-      <form method="get" class="row g-2 align-items-center">
-        <div class="col-12 col-lg"><span class="fw-semibold">Ver precios de flores</span>
-          <span class="text-body-secondary small ms-1">({{ tabla|length }} de {{ n_productos }})</span></div>
-        <div class="col-6 col-lg-3">
-          <select name="mercado" class="form-select form-select-sm" aria-label="Mercado" onchange="this.form.submit()">
-            {% for m in mercados %}<option value="{{ m }}" {% if m == mercado %}selected{% endif %}>{{ m }}</option>{% endfor %}
-          </select></div>
-        <div class="col-6 col-lg-2">
-          <select name="especie" class="form-select form-select-sm" aria-label="Especie" onchange="this.form.submit()">
-            <option value="Todas" {% if especie == "Todas" %}selected{% endif %}>Todas las especies</option>
-            {% for e in especies %}<option value="{{ e }}" {% if e == especie %}selected{% endif %}>{{ e }}</option>{% endfor %}
-          </select></div>
-        <div class="col-12 col-lg-3">
-          <input type="search" id="buscar" class="form-control form-control-sm" placeholder="Buscar variedad, calidad…"></div>
-      </form>
-    </div>
-    <div class="table-responsive">
-      <table class="table table-sm table-hover align-middle mb-0" id="tabla-precios">
-        <thead class="table"><tr>
-          <th>Especie</th><th>Variedad</th><th>Calidad</th><th>Unidad</th><th>Origen</th>
-          <th class="text-end">Precio</th><th class="text-end">Var.</th></tr></thead>
-        <tbody>
-        {% for f in tabla %}
-          <tr><td>{{ f.especie }}</td><td>{{ f.variedad }}</td><td>{{ f.calidad }}</td><td>{{ f.unidad }}</td><td>{{ f.origen }}</td>
-            <td class="text-end fw-semibold">{{ f.precio }}</td>
-            <td class="text-end {% if f.tendencia == 'sube' %}text-success{% elif f.tendencia == 'baja' %}text-danger{% else %}text-body-secondary{% endif %}">{{ f.var }}</td></tr>
-        {% empty %}
-          <tr><td colspan="7" class="text-center text-body-secondary py-4">Sin precios en el último boletín.</td></tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    <div class="card-footer small text-body-secondary">Cada precio está en su unidad; unidades distintas no son comparables entre sí.</div>
-  </div>
-  {% endif %}
 </main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+{% verbatim %}
 <script>
-  const q = document.getElementById('buscar');
-  if (q) q.addEventListener('input', () => {
-    const t = q.value.toLowerCase();
-    document.querySelectorAll('#tabla-precios tbody tr').forEach(tr => {
-      tr.hidden = t && !tr.textContent.toLowerCase().includes(t);
-    });
-  });
-  document.getElementById('form-subir').addEventListener('submit', () => {
-    const b = document.getElementById('btn-subir');
-    b.disabled = true; b.textContent = 'Procesando…';
-  });
+// ==LOGICA==
+const ANIO = 2026;                       // solo se usan las filas de este año
+const GUARDAR_EN_NAVEGADOR = false;      // true: recuerda el boletín en este navegador (localStorage) entre visitas
+const COLUMNAS = ['Fecha', 'Mercado', 'Subsector', 'Especie', 'Variedad', 'Calidad', 'Unidad', 'Origen', 'Precio promedio'];
+// Tarjetas destacadas: [especie, variedad, calidad]. Los textos deben coincidir con el Excel.
+const DESTACADOS = [
+  ['Rosa', 'Rojas', 'Primera 50 cms.'],
+  ['Rosa', 'Rojas', 'Primera 60 cms.'],
+  ['Rosa', 'Rojas', 'Primera 70 cms.'],
+];
+
+const txt = v => String(v ?? '').trim();
+
+function aIso(v) {
+  if (typeof v === 'number') return new Date(Date.UTC(1899, 11, 30) + Math.round(v) * 86400000).toISOString().slice(0, 10);
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  return txt(v).slice(0, 10);
+}
+
+// matriz: filas del Excel como arrays; la primera es el encabezado. Deja solo las filas de ANIO.
+function filasDesdeMatriz(matriz) {
+  const encabezado = (matriz[0] || []).map(txt);
+  const faltan = COLUMNAS.filter(c => !encabezado.includes(c));
+  if (faltan.length) throw new Error('Faltan columnas en el Excel: ' + faltan.join(', '));
+  const p = COLUMNAS.map(c => encabezado.indexOf(c));
+  const salida = [];
+  for (let i = 1; i < matriz.length; i++) {
+    const f = matriz[i];
+    if (!f) continue;
+    const fecha = aIso(f[p[0]]);
+    if (!fecha.startsWith(String(ANIO))) continue;
+    const bruto = f[p[8]];
+    const precio = typeof bruto === 'number' ? bruto : parseFloat(bruto);
+    if (!Number.isFinite(precio)) continue;
+    salida.push({ fecha, mercado: txt(f[p[1]]), subsector: txt(f[p[2]]), especie: txt(f[p[3]]),
+                  variedad: txt(f[p[4]]), calidad: txt(f[p[5]]), unidad: txt(f[p[6]]), origen: txt(f[p[7]]), precio });
+  }
+  if (!salida.length) throw new Error('El archivo no tiene datos de ' + ANIO + '.');
+  return salida;
+}
+
+const clp = v => v == null ? '—' : '$' + Math.round(v).toLocaleString('es-CL');
+const pct = v => v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(1).replace('.', ',') + '%';
+const fechaCL = iso => iso ? iso.split('-').reverse().join('-') : '—';
+const cmp = (a, b) => a < b ? -1 : a > b ? 1 : 0;
+const clave = r => [r.especie, r.variedad, r.calidad, r.unidad, r.origen].join('\u0001');
+
+function fila(r, prev) {
+  const v = prev ? (r.precio / prev - 1) * 100 : null;
+  return { especie: r.especie, variedad: r.variedad, calidad: r.calidad, unidad: r.unidad, origen: r.origen,
+           precio: clp(r.precio), precioAnterior: clp(prev), var: pct(v), _v: v,
+           tendencia: !v ? 'igual' : v > 0 ? 'sube' : 'baja' };
+}
+
+function calcular(filas, mercado, especie) {
+  const mercados = [...new Set(filas.map(r => r.mercado))].sort(cmp);
+  if (!mercados.includes(mercado)) mercado = mercados[0];
+  const dm = filas.filter(r => r.mercado === mercado);
+  const especies = [...new Set(dm.map(r => r.especie))].sort(cmp);
+  if (especie !== 'Todas' && !especies.includes(especie)) especie = 'Todas';
+
+  const fechas = [...new Set(dm.map(r => r.fecha))].sort(cmp);
+  const ultima = fechas[fechas.length - 1];
+  const anterior = fechas.length > 1 ? fechas[fechas.length - 2] : null;
+
+  const prev = new Map(dm.filter(r => r.fecha === anterior).map(r => [clave(r), r.precio]));
+  const todo = dm.filter(r => r.fecha === ultima).map(r => fila(r, prev.get(clave(r))))
+    .sort((a, b) => cmp([a.especie, a.variedad, a.calidad, a.unidad, a.origen].join('\u0001'),
+                        [b.especie, b.variedad, b.calidad, b.unidad, b.origen].join('\u0001')));
+  const conVar = todo.filter(f => f._v != null);
+  return {
+    mercados, especies, mercado, especie, ultima: fechaCL(ultima), anterior: fechaCL(anterior), nProductos: todo.length,
+    destacados: DESTACADOS.flatMap(([e, v, c]) => todo.filter(f => f.especie === e && f.variedad === v && f.calidad === c)),
+    tabla: especie === 'Todas' ? todo : todo.filter(f => f.especie === especie),
+    subidas: conVar.filter(f => f._v > 0).sort((a, b) => b._v - a._v).slice(0, 5),
+    bajadas: conVar.filter(f => f._v < 0).sort((a, b) => a._v - b._v).slice(0, 5),
+  };
+}
+// ==FIN LOGICA==
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const CLAVE_LS = 'boletin_flores_' + ANIO;
+let FILAS = null;
+const estado = { mercado: null, especie: 'Todas' };
+
+const badge = f => f.tendencia === 'sube' ? `<span class="badge text-bg-success">▲ ${esc(f.var)}</span>`
+                 : f.tendencia === 'baja' ? `<span class="badge text-bg-danger">▼ ${esc(f.var)}</span>`
+                 : `<span class="badge text-bg-secondary">${esc(f.var)}</span>`;
+
+function lista(titulo, clase, items, color) {
+  const li = items.map(f => `<li class="list-group-item d-flex justify-content-between align-items-center">
+      <span>${esc(f.especie)} · ${esc(f.variedad)}<br><small class="text-body-secondary">${esc(f.calidad)} · ${esc(f.unidad)}</small></span>
+      <span class="text-end">${esc(f.precio)}<br>${badge(f)}</span></li>`).join('')
+    || `<li class="list-group-item text-body-secondary">Sin ${color}.</li>`;
+  return `<div class="col-12 col-lg-6"><div class="card h-100"><div class="card-header ${clase} fw-semibold">${titulo}</div>
+    <ul class="list-group list-group-flush">${li}</ul></div></div>`;
+}
+
+function render() {
+  const m = calcular(FILAS, estado.mercado, estado.especie);
+  estado.mercado = m.mercado; estado.especie = m.especie;
+
+  $('subtitulo').innerHTML = `${esc(m.mercado)} · boletín del <strong>${m.ultima}</strong>` +
+    (m.anterior !== '—' ? ` (variación vs. ${m.anterior})` : '');
+
+  $('destacados').innerHTML = m.destacados.map(f => `<div class="col-12 col-md-6 col-lg-4"><div class="card h-100 shadow-sm"><div class="card-body">
+      <div class="text-body-secondary small">${esc(f.especie)} ${esc(f.variedad.toLowerCase())} · ${esc(f.calidad)}</div>
+      <div class="display-6 fw-semibold my-1">${esc(f.precio)}</div>
+      <div class="small text-body-secondary mb-2">${esc(f.unidad)} · ${esc(f.origen)}</div>
+      ${badge(f)} <span class="small text-body-secondary ms-1">antes ${esc(f.precioAnterior)}</span></div></div></div>`).join('');
+
+  $('movimientos').innerHTML = (m.subidas.length || m.bajadas.length)
+    ? lista('Mayores subidas', 'text-success', m.subidas, 'subidas') + lista('Mayores bajadas', 'text-danger', m.bajadas, 'bajadas') : '';
+
+  $('f-mercado').innerHTML = m.mercados.map(x => `<option ${x === m.mercado ? 'selected' : ''}>${esc(x)}</option>`).join('');
+  $('f-especie').innerHTML = `<option value="Todas" ${m.especie === 'Todas' ? 'selected' : ''}>Todas las especies</option>` +
+    m.especies.map(x => `<option ${x === m.especie ? 'selected' : ''}>${esc(x)}</option>`).join('');
+
+  $('tabla').innerHTML = m.tabla.map(f => `<tr><td>${esc(f.especie)}</td><td>${esc(f.variedad)}</td><td>${esc(f.calidad)}</td>
+      <td>${esc(f.unidad)}</td><td>${esc(f.origen)}</td><td class="text-end fw-semibold">${esc(f.precio)}</td>
+      <td class="text-end ${f.tendencia === 'sube' ? 'text-success' : f.tendencia === 'baja' ? 'text-danger' : 'text-body-secondary'}">${esc(f.var)}</td></tr>`).join('')
+    || '<tr><td colspan="7" class="text-center text-body-secondary py-4">Sin precios en el último boletín.</td></tr>';
+  $('contador').textContent = `(${m.tabla.length} de ${m.nProductos})`;
+  buscar();
+  $('resultado').classList.remove('d-none');
+}
+
+function buscar() {
+  const t = $('buscar').value.toLowerCase();
+  document.querySelectorAll('#tabla tr').forEach(tr => { tr.hidden = !!t && !tr.textContent.toLowerCase().includes(t); });
+}
+
+function mostrarError(msg) { $('error').textContent = msg; $('error').classList.toggle('d-none', !msg); }
+
+async function cargarArchivo(archivo) {
+  mostrarError('');
+  if (!archivo.name.toLowerCase().endsWith('.xlsx')) return mostrarError('El archivo debe ser .xlsx');
+  $('cargando').classList.remove('d-none'); $('archivo').disabled = true;
+  await new Promise(r => setTimeout(r, 50));   // deja pintar el "Procesando…" antes del trabajo pesado
+  try {
+    const wb = XLSX.read(await archivo.arrayBuffer(), { type: 'array', dense: true });
+    const matriz = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: null });
+    FILAS = filasDesdeMatriz(matriz);
+    if (GUARDAR_EN_NAVEGADOR) { try { localStorage.setItem(CLAVE_LS, JSON.stringify(FILAS)); } catch (e) {} }
+    render();
+    $('subir').classList.remove('show');
+  } catch (e) {
+    const msg = String(e && e.message || '');
+    mostrarError(msg.startsWith('Faltan columnas') || msg.startsWith('El archivo no tiene')
+      ? msg : 'No pude leer el archivo. ¿Es un .xlsx válido?');
+  } finally {
+    $('cargando').classList.add('d-none'); $('archivo').disabled = false; $('archivo').value = '';
+  }
+}
+
+$('archivo').addEventListener('change', e => e.target.files[0] && cargarArchivo(e.target.files[0]));
+$('f-mercado').addEventListener('change', e => { estado.mercado = e.target.value; estado.especie = 'Todas'; render(); });
+$('f-especie').addEventListener('change', e => { estado.especie = e.target.value; render(); });
+$('buscar').addEventListener('input', buscar);
+
+if (GUARDAR_EN_NAVEGADOR) {
+  try { const g = localStorage.getItem(CLAVE_LS); if (g) { FILAS = JSON.parse(g); render();
+        $('subir').classList.remove('show'); } } catch (e) {}
+}
 </script>
+{% endverbatim %}
 {% endblock %}
