@@ -27,18 +27,26 @@ class ProductoAdmin(admin.ModelAdmin):
 class CustomUserAdmin(UserAdmin):
     model = CustomUser
     list_display = ('email', 'username', 'role', 'telefono', 'comuna', 'is_staff')
-    
-    # Agregamos secciones personalizadas al editar un usuario en el admin
+    list_filter = UserAdmin.list_filter + ('role', 'comuna')
+
     fieldsets = UserAdmin.fieldsets + (
-        ('Información de Envío y Rol (Florería)', {'fields': ('role', 'telefono', 'direccion', 'comuna')}),
+        ('Información de Envío y Rol (Florería)', {
+            'fields': ('role', 'telefono', 'direccion', 'comuna'),
+        }),
+        ('Información del Carrito', {
+            'fields': ('carrito_guardado',),
+        }),
     )
+
     add_fieldsets = UserAdmin.add_fieldsets + (
-        ('Información de Envío y Rol (Florería)', {'fields': ('email', 'role', 'telefono', 'direccion', 'comuna')}),
+        ('Información de Envío y Rol (Florería)', {
+            'fields': ('email', 'role', 'telefono', 'direccion', 'comuna'),
+        }),
     )
-    # Añadimos 'carrito_guardado' a los campos que ya muestra el UserAdmin por defecto
-    fieldsets = UserAdmin.fieldsets + (
-        ('Información del Carrito', {'fields': ('carrito_guardado',)}),
-    )
-    
-    # Hacemos que sea un campo de solo lectura para evitar modificaciones manuales accidentales
-    readonly_fields = ('carrito_guardado',) + UserAdmin.readonly_fields
+
+    def get_readonly_fields(self, request, obj=None):
+        readonly = list(super().get_readonly_fields(request, obj))
+        readonly.append('carrito_guardado')
+        if not request.user.is_superuser:
+            readonly.append('role')
+        return readonly

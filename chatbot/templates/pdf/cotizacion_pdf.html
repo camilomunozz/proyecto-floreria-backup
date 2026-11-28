@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: Helvetica, Arial, sans-serif; font-size: 12px; color: #333; }
+        .header { border-bottom: 2px solid #2e7d32; padding-bottom: 10px; margin-bottom: 20px; }
+        .title { font-size: 20px; font-weight: bold; color: #2e7d32; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th { background-color: #2e7d32; color: white; padding: 8px; text-align: left; }
+        td { border-bottom: 1px solid #ddd; padding: 8px; }
+        .num { text-align: right; }
+        .totales { width: 40%; margin-left: 60%; margin-top: 20px; }
+        .totales td { border: none; padding: 4px 8px; }
+        .total-final { font-weight: bold; font-size: 14px; border-top: 2px solid #333 !important; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="title">Cotización Referencial de Insumos Florales</div>
+        <div>Fecha de emisión: {{ fecha }} | Moneda: Pesos Chilenos (CLP)</div>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Producto / Formato</th>
+                <th>Fuente Referencial</th>
+                <th class="num">Cant.</th>
+                <th class="num">Precio Unit.</th>
+                <th class="num">Subtotal</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in items %}
+            <tr>
+                <td>{{ item.producto }}</td>
+                <td>{{ item.fuente }}</td>
+                <td class="num">{{ item.cantidad }}</td>
+                <td class="num">${{ item.precio_unitario |floatformat:"0g" }}</td>
+                <td class="num">${{ item.subtotal |floatformat:"0g" }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="5" style="text-align:center;">No hay productos agregados a la cotización.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <table class="totales">
+        <tr>
+            <td>Neto:</td>
+            <td class="num">${{ neto |floatformat:"0g" }}</td>
+        </tr>
+        <tr>
+            <td>IVA (19%):</td>
+            <td class="num">${{ iva  |floatformat:"0g"}}</td>
+        </tr>
+        <tr class="total-final">
+            <td>Total Estimado:</td>
+            <td class="num">${{ total |floatformat:"0g"}}</td>
+        </tr>
+    </table>
+</body>
+</html>
