@@ -1,4 +1,3 @@
-
 document.addEventListener("DOMContentLoaded", () => {
 
     // =========================================
@@ -29,6 +28,34 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     let isSending = false;
+
+    let cooldownTimer = null;
+
+    function startCooldown(seconds) {
+        const originalPlaceholder = chatInput.placeholder;
+        let remaining = seconds;
+
+        chatInput.disabled = true;
+        if (sendButton) sendButton.disabled = true;
+        chatInput.placeholder = `Espera ${remaining} s...`;
+
+        cooldownTimer = setInterval(() => {
+            remaining--;
+
+            if (remaining > 0) {
+                chatInput.placeholder = `Espera ${remaining} s...`;
+                return;
+            }
+
+            clearInterval(cooldownTimer);
+            cooldownTimer = null;
+
+            chatInput.disabled = false;
+            if (sendButton) sendButton.disabled = false;
+            chatInput.placeholder = originalPlaceholder;
+            chatInput.focus();
+        }, 1000);
+    }
 
     // =========================================
     // ABRIR Y CERRAR CHATBOT
@@ -302,6 +329,52 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // =========================================
+    // ESTILIZAR MENSAJE
+    // =========================================
+    function escapeRegExp(text) {
+    return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    }
+
+    function addBotMessage(text, products = []) {
+    const message = document.createElement("div");
+    message.classList.add("chatbot-message", "chatbot-message-bot");
+
+    // Quita el Markdown de negritas que a veces escribe el modelo
+    text = text.replace(/\*\*/g, "");
+
+    const names = (products || [])
+        .map(p => p.nombre)
+        .filter(Boolean)
+        .sort((a, b) => b.length - a.length)
+        .map(escapeRegExp);
+
+    const pricePattern =
+        "\\$\\s?\\d+(?:[.,\\s]\\d{3})*|\\d+(?:[.,\\s]\\d{3})*\\s?(?:pesos|CLP)";
+
+    const pattern = names.length
+        ? `(${names.join("|")}|${pricePattern})`
+        : `(${pricePattern})`;
+
+    text.split(new RegExp(pattern, "gi")).forEach((chunk, index) => {
+        if (!chunk) return;
+
+        if (index % 2 === 1) {
+            const span = document.createElement("span");
+            const esPrecio = /\d/.test(chunk);
+            span.classList.add(esPrecio ? "chatbot-inline-price" : "chatbot-inline-name");
+            span.textContent = chunk;
+            message.appendChild(span);
+        } else {
+            message.appendChild(document.createTextNode(chunk));
+        }
+    });
+
+    messagesContainer.appendChild(message);
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    return message;
+    }
+
+    // =========================================
     // ENVIAR MENSAJE
     // =========================================
 
@@ -336,6 +409,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
             const data = await response.json();
 
+            if (response.status === 429) {
+                removeTypingIndicator();
+                addMessage(data.error || "Espera unos segundos e inténtalo de nuevo. 🌷");
+                startCooldown(data.retry_after || 15);
+                return;
+            }
+
             if (!response.ok) {
                 throw new Error(
                     data.error || "No se pudo obtener una respuesta."
@@ -345,7 +425,7 @@ document.addEventListener("DOMContentLoaded", () => {
             removeTypingIndicator();
 
             if (data.respuesta) {
-                addMessage(data.respuesta);
+                addBotMessage(data.respuesta, data.productos);
             }
 
             showProducts(data.productos);
@@ -364,13 +444,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
             isSending = false;
 
-            chatInput.disabled = false;
+            if (!cooldownTimer) {
+                chatInput.disabled = false;
 
-            if (sendButton) {
-                sendButton.disabled = false;
+                if (sendButton) {
+                    sendButton.disabled = false;
+                }
+
+                chatInput.focus();
             }
-
-            chatInput.focus();
         }
     }
 

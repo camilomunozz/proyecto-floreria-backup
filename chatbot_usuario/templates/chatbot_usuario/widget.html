@@ -4,15 +4,17 @@
 <div id="flower-chatbot" class="flower-chatbot-usuario">
 
     <!-- Botón flotante -->
-    <button
-        id="chatbot-toggle"
-        class="chatbot-toggle"
-        type="button"
-        aria-label="Abrir asistente virtual"
-        aria-expanded="false"
-    >
-        <span class="chatbot-toggle-icon">✿</span>
-    </button>
+    <div class="toggle-box" title="Asistente virtual" id="chatbot-toggle">
+        <button
+            class="chatbot-toggle"
+            type="button"
+            aria-label="Abrir asistente virtual"
+            aria-expanded="false"
+        >
+            <!--<span class="chatbot-toggle-icon">✿</span>-->
+            <i class="chatbot-toggle-icon bi bi-chat-right-dots-fill"></i>
+        </button>
+    </div>
 
     <!-- Ventana del chat -->
     <section

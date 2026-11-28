@@ -76,6 +76,19 @@ def barra_busqueda(request):
 def filtros(request):
     return render(request, 'catalogo/filtros.html')
 
+#Rango de precios
+PRICE_MAX = 50000
+PRICE_STEP = 5000
+
+def _rangoprecio_param(request, nombre, defecto):
+    try:
+        precio = int(request.GET.get(nombre,defecto))
+    except (TypeError, ValueError):
+        return defecto
+    
+    precio = max(0,min(precio, PRICE_MAX))
+    return round(precio/PRICE_STEP) * PRICE_STEP
+
 #Catalogo de productos
 def catalogo_productos(request):
     #Carga los productos, filtra los productos no disponibles y los ordena por ID.
@@ -105,10 +118,23 @@ def catalogo_productos(request):
     if list_ocasiones:
         productos = productos.filter(ocasion_id__in=list_ocasiones)
 
+    #Definimos el rango de precios
+    precio_min = _rangoprecio_param(request, 'precio_min', 0)
+    precio_max = _rangoprecio_param(request, 'precio_max', PRICE_MAX)
+
+    #En caso de que el precio minimo definido sea mayor al precio mayor, los valores se intercambian
+    if precio_min > precio_max:
+        precio_min, precio_max = precio_max, precio_min
+
+    if precio_min > 0:
+        productos = productos.filter(precio__gte=precio_min)
+    if precio_max < PRICE_MAX:
+        productos = productos.filter(precio__lte=precio_max)
+
     #Fija la cantidad de productos por pagina.
     paginacion = Paginator(productos, 12)
     pagina_num = paginacion.get_page(request.GET.get('page'))
-
+    
     #Querystring que conserva los filtros
     params = request.GET.copy()
     params.pop('page', None)
@@ -124,6 +150,11 @@ def catalogo_productos(request):
         'list_tipos' : list_tipos,
         'list_categorias' : list_categorias,
         'list_ocasiones' : list_ocasiones,
+        'precio_min' : precio_min,
+        'precio_max': precio_max,
+        'precio_top' : PRICE_MAX,
+        'precio_step': PRICE_STEP,
+        'precio_activo' : precio_min > 0 or precio_max < PRICE_MAX,           
     }
     
     return render(request, 'catalogo/catalogo_producto.html', context)

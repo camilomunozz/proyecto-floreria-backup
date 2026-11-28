@@ -3,6 +3,7 @@
 import os
 import json
 import logging
+import random
 import re
 import unicodedata
 
@@ -26,6 +27,45 @@ from rapidfuzz import fuzz, process
 
 
 logger = logging.getLogger(__name__)
+
+MODELOS = [
+    {
+        "nombre": "openai/gpt-oss-20b",
+        "tokens": 800,
+        "extra": {"reasoning_effort": "low"},
+    },
+    {
+        "nombre": "openai/gpt-oss-120b",
+        "tokens": 800,
+        "extra": {"reasoning_effort": "low"},
+    },
+    {
+        "nombre" : "qwen/qwen3.8-27b",
+        "tokens" : 600,
+        "extra" : {},
+    }
+]
+
+def consultar_modelo(cliente, instrucciones, mensaje):
+    """Prueba cada modelo en orden y pasa al siguiente si hay límite de solicitudes."""
+    ultimo_error = None
+
+    for modelo in MODELOS:
+        try:
+            return cliente.chat.completions.create(
+                model=modelo["nombre"],
+                messages=[
+                    {"role": "system", "content": instrucciones},
+                    {"role": "user", "content": mensaje},
+                ],
+                max_completion_tokens=modelo["tokens"],
+                **modelo["extra"],
+            )
+        except RateLimitError as e:
+            logger.warning("Límite alcanzado en %s: %s", modelo["nombre"], e)
+            ultimo_error = e
+
+    raise ultimo_error 
 
 
 def normalizar_texto(texto):
@@ -275,10 +315,15 @@ def obtener_productos(mensaje, request=None):
         if coincide:
             productos_filtrados.append(producto)
 
-    productos = sorted(
-        productos_filtrados,
-        key=lambda producto: producto.precio
-    )[:3]
+    sin_filtros = presupuesto is None and not any(filtros.values())
+
+    if sin_filtros:
+        productos = random.sample(productos_filtrados, k=min(1, len(productos_filtrados)))
+    else:
+        productos = sorted(
+            productos_filtrados,
+            key=lambda producto: producto.precio
+        )[:3]
 
     catalogo = []
     tarjetas = []
@@ -407,56 +452,45 @@ Puedes preguntar si desea cambiar algún criterio.
 """
 
         instrucciones = f"""
-Eres el asistente virtual de FlowerView,
-una tienda especializada en arreglos florales.
+            Eres el asistente virtual de FlowerView,
+            una tienda especializada en arreglos florales.
 
-REGLAS:
+            REGLAS:
+            1. Lenguaje de comunicación con el usuario:
+                -Responder siempre en español.
+                -Utilizar tono amable y profesional.
+                -Respues breves y claras.
+            2. Reglas de negocio:
+                -Flowerview ofrece compra online y retiro en tienda.
+                -Flowerview no ofrece en el catalogo producos sin stock o marcados como 'no disponible'.
+            3. Recomendar prodcutos:
+                -Recomienda exclusivamente productos que existen en el catalogo.
+                -Al recomendar productos menciona en la respuesta su nombre, el precio mencionalo si es que el cliente solicito su valor.
+                -Al mencionar productos en el mensaje no modifiques los nombres o el precio, utilizalos tal cual aparecen en el catalogo.
+                -Si no hay coincidencias de ningún tipo, comunicalo con amabilidad y claridad.
+            4. Reglas de redacción de la respuesta:
+                -Los nombres de los productos deben de ir encapsulados con comillas dobles (EJ: "nombre_del_producto")
+                -Los precios de los productos deben de ir en formato de peso chileno, con simbolo peso, separador de miles y sin decimales. (EJ: si el valor del precio es '20000' tu devuelves '$20.000')
+            5. IMPORTENTE: SIEMPRE SEGUIR TODAS LAS REGLAS!!!
 
-1. Responde siempre en español.
-2. Utiliza un tono amable y profesional.
-3. Responde con un máximo de 80 palabras.
-4. Recomienda exclusivamente productos del catálogo.
-5. Nunca inventes nombres, precios ni disponibilidad.
-6. Respeta todos los criterios solicitados.
-7. Si no hay coincidencias, comunícalo amablemente.
-8. Si necesitas información adicional, realiza una sola pregunta breve.
-9. FlowerView ofrece compra online y retiro en tienda.
-10. No prometas despacho a domicilio.
-11. Cuando recomiendes productos, menciona sus nombres.
-12. No describas características que no estén respaldadas
-    por la información del catálogo.
+            CRITERIOS DETECTADOS:
 
-CRITERIOS DETECTADOS:
+            Características: {filtros["palabras"]}
+            Categorías: {filtros["categoria"]}
+            Tipos: {filtros["tipo"]}
+            Ocasiones: {filtros["ocasion"]}
+            Presupuesto: {tipo_presupuesto} - {presupuesto}
 
-Características: {filtros["palabras"]}
-Categorías: {filtros["categoria"]}
-Tipos: {filtros["tipo"]}
-Ocasiones: {filtros["ocasion"]}
-Presupuesto: {tipo_presupuesto} - {presupuesto}
-
-{informacion_catalogo}
-"""
+            {informacion_catalogo}
+        """
 
         cliente = Groq(
             api_key=api_key,
             timeout=30.0,
-            max_retries=1
+            max_retries=0
         )
 
-        respuesta = cliente.chat.completions.create(
-            model="openai/gpt-oss-20b",
-            messages=[
-                {
-                    "role": "system",
-                    "content": instrucciones
-                },
-                {
-                    "role": "user",
-                    "content": mensaje
-                }
-            ],
-            max_completion_tokens=300
-        )
+        respuesta = consultar_modelo(cliente, instrucciones, mensaje)
 
         texto_respuesta = respuesta.choices[0].message.content
 
@@ -470,6 +504,12 @@ Presupuesto: {tipo_presupuesto} - {presupuesto}
                 },
                 status=502
             )
+
+        texto_normalizado = normalizar_texto(texto_respuesta)
+        tarjetas = [
+            t for t in tarjetas
+            if normalizar_texto(t["nombre"]) in texto_normalizado
+        ]
 
         return JsonResponse({
             "respuesta": texto_respuesta.strip(),
@@ -505,28 +545,36 @@ Presupuesto: {tipo_presupuesto} - {presupuesto}
             status=503
         )
 
-    except RateLimitError:
+    except RateLimitError as e:
 
-        logger.warning("Groq alcanzó el límite de solicitudes.")
+        logger.warning("Todos los modelos alcanzaron su límite: %s", e)
+
+        # Tiempo de espera sugerido por Groq, acotado entre 5 y 60 s
+        espera = 15
+        try:
+            espera = int(float(e.response.headers.get("retry-after", 15)))
+        except Exception:
+            pass
+        espera = max(5, min(espera, 60))
 
         return JsonResponse(
             {
-                "error": "El asistente ha alcanzado temporalmente su límite de solicitudes."
+                "error": "Estoy recibiendo muchas consultas. Espera unos segundos e inténtalo de nuevo. 🌷",
+                "retry_after": espera,
             },
             status=429
         )
 
     except APIStatusError as e:
 
-        logger.exception(
-            "Groq respondió con un error HTTP: %s",
-            e.status_code
+        logger.error(
+            "Groq error HTTP %s: %s",
+            e.status_code,
+            getattr(e, "body", None) or e.response.text
         )
 
         return JsonResponse(
-            {
-                "error": "El servicio de recomendaciones presentó un problema."
-            },
+            {"error": "El servicio de recomendaciones presentó un problema."},
             status=502
         )
 

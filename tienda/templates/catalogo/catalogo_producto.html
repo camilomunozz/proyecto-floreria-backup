@@ -17,7 +17,7 @@
     <div class="row g-4 flower-catalogo">
         <!--Recuadro Filtros-->
         {% include 'catalogo/filtros.html' %}
-
+        
         <!--Catalogo de productos-->
         {% if productos %}
             <div class="col-12 mt-5 mt-xl-0 col-xxl-9 col-xl-9 catalogo-box" >
@@ -178,6 +178,52 @@
             filtro.addEventListener('shown.bs.collapse', () => sessionStorage.setItem(filter_id, 'abierto'));
             filtro.addEventListener('hidden.bs.collapse', () => sessionStorage.setItem(filter_id, 'cerrado'));
         });
+    })();
+
+    //Rango de precios
+    (function (){
+        const min_val = document.getElementById('precio-min');
+        const max_val = document.getElementById('precio-max');
+        const fill = document.getElementById('price-fill');
+        const min_lab = document.getElementById('precio-min-label');
+        const max_lab = document.getElementById('precio-max-label');
+
+        if(!min_val || !max_val) return;
+
+        const top = Number(min_val.max);
+        const step = Number(min_val.step);
+
+        const format = n => '$' + String(n).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+        
+        function draw(){
+            let a = Number(min_val.value);
+            let b = Number(max_val.value);
+
+            if(a > b - step){
+                if(document.activeElement === min_val){
+                    a = b - step; 
+                    min_val.value = a;
+                }
+                else{
+                    b = a + step;
+                    max_val.value = b;
+                }
+            }
+
+            min_lab.textContent = format(a);
+            max_lab.textContent = b >= top ? format(b) + '+' : format(b);
+
+            fill.style.left = (a / top * 100) + '%';
+            fill.style.right = (100 - b / top * 100) + '%';
+        }
+
+        min_val.addEventListener('input', draw);
+        max_val.addEventListener('input', draw);
+
+        min_val.addEventListener('change', () => min_val.form.submit());
+        max_val.addEventListener('change', () => max_val.form.submit());
+
+        draw();
     })();
 
 

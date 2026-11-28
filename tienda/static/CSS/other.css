@@ -63,7 +63,6 @@
     /*====== Filtros Head =======*/
     .filter-box{
         background-color: #ffffff;
-        margin: 0;
         padding: 0;
         height: fit-content;
         border-radius: clamp(10px, 1vw, 12px);
@@ -141,7 +140,7 @@
     }
     /*************************************************************/
 
-    /*====== Filtros Item =======*/
+    /*====== Filtros Title=======*/
     .filter-item{
         --margin-sz: clamp(0.6rem, 0.4rem + 0.3vw, 1.5rem);
 
@@ -256,6 +255,104 @@
         padding-left: calc(var(--item-sz)*0.5);
         padding-right: calc(var(--item-sz)*0.5);*/
     }
+    /*************************************************************/
+
+    /*====== Filtros rango =======*/
+
+    .price-values{
+        --font-sz: clamp(0.8rem, 0.4rem + 0.8vw, 1rem);
+        --margin-sz: clamp(0.6rem, 0.4rem + 0.3vw, 1.5rem);
+
+        display: flex;
+        justify-content: space-between;
+        font-size: calc(var(--font-sz)*0.9);
+        margin-bottom: calc(var(--margin-sz)*0.7);
+        margin-top: calc(var(--margin-sz)*0.7);
+        font-weight: 500;
+    }
+
+    .price-slider{
+        --font-sz: clamp(0.8rem, 0.4rem + 0.8vw, 1rem);
+        --margin-sz: clamp(0.6rem, 0.4rem + 0.3vw, 1.5rem);
+
+        position: relative;
+        height: calc(var(--margin-sz)*2);
+        padding: 0;
+        margin: 0;
+    }
+
+    .price-track{
+        position: absolute;
+        top: 50%;
+        height: calc(var(--margin-sz));
+        transform: translateY(-50%);
+        left: 0;
+        right: 0;
+        background: var(--filter-bg);
+        border-radius: 1rem;
+    }
+
+    .rail{
+        position: absolute;
+        left: calc(var(--font-sz)/2);
+        right: calc(var(--font-sz)/2);
+        top: 50%;
+        height: var(--margin-sz);
+        transform: translateY(-50%);
+    }
+
+    .price-fill {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        border: var(--margin-sz);
+        background-color: var(--light-leaf);
+    }
+
+    .price-slider input[type="range"]{
+        position: absolute;
+        inset: 0;
+        margin: 0;
+        width: 100%;
+        background: transparent;
+        appearance: none;
+        -webkit-appearance: none;
+        pointer-events: none;
+    }
+
+    .price-slider input[type="range"]::-webkit-slider-runnable-track{
+        background: transparent;
+    }
+
+    .price-slider input[type="range"]::-moz-range-track{
+        background: transparent;
+    }
+
+    .price-slider input[type="range"]::-webkit-slider-thumb{
+        -webkit-appearance: none;
+        pointer-events: auto;
+        width: calc(var(--font-sz));
+        height: calc(var(--font-sz));
+        border-radius: 50%;
+        background-color: var(--light-leaf);
+        
+        
+        cursor: grab;
+    }
+
+    .price-slider input[type="range"]::moz-range-thumb{
+        pointer-events: auto;
+        width: calc(var(--font-sz));
+        height: calc(var(--font-sz));
+        border-radius: 50%;
+        background: #ffffff;
+        border: 1px solid var(--text-lightgray);
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+        cursor: grab;
+    }
+
+
+
     /*************************************************************/
 
     /*====== Etiquetas ======*/
@@ -385,6 +482,12 @@
 
             border-radius: 30px;
             box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.5);
+        }
+
+        .cartbtn i span{
+             --icon-sz: clamp(1rem, 0.4rem + 0.8vw, 1.5rem);
+
+            font-size: calc(var(--icon-sz));
         }
     /* Fix text */
 
@@ -556,7 +659,7 @@
         .flower-cartbtn{
             opacity: 0;
             transform: translateY(100%);
-            transition: opacity 1s ease, transform 0.3s ease;
+            transition: opacity 0.45s ease, transform 0.3s ease;
         }
 
         .flower-productbox:hover .flower-cartbtn,

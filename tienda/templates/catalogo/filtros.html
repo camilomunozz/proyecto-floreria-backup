@@ -3,7 +3,7 @@
    <div class="filter-head">
       <span><i class="bi bi-funnel-fill"></i>Filtros del catálogo</span>
       <!--Boton limpiar-->
-      {% if  list_tipos or list_categorias or list_ocasiones %}
+      {% if  list_tipos or list_categorias or list_ocasiones or precio_activo %}
          <a href="{% url 'catalogo_productos' %}" class="btn-clear" title="Limpiar filtros"><i class="bi bi-trash3-fill"></i></a>
       {% else %}
          <a class="btn-clear" id="clear-inactive" title="Limpiar filtros"><i class="bi bi-trash3-fill"></i></a>
@@ -13,8 +13,32 @@
 
    <!--Precio-->
    <div class="filter-item">
-      <i class="filter-item-icon bi bi-coin"></i>
-      <span>Rango de precios</span>
+      <!--Titulo-->
+      <button class="filter-item-title collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#preciobox">
+         <div>
+            <i class="filter-item-icon bi bi-coin"></i> 
+            <span>Rango de precios</span> 
+         </div>
+         <i class="bi bi-caret-down-fill"></i>
+      </button>
+      <!--Menu colapsable-->
+      <div class="filter-item-box collapse" id="preciobox" data-tope={{precio_top}} data-estado>
+          
+         <div class="price-values">
+            <span id="precio-min-label"></span>
+            <span id="precio-max-label"></span>
+         </div>
+
+         <div class="price-slider">
+            <div class="price-track"></div>
+            <div class="rail">
+               <div class="price-fill" id="price-fill"></div>
+            </div>
+            <input type="range" name="precio_min" id="precio-min" min="0" max="{{precio_top}}" step="{{precio_step}}" value="{{precio_min}}" aria-label="Precio mínimo">
+            <input type="range" name="precio_max" id="precio-max" min="0" max="{{precio_top}}" step="{{precio_step}}" value="{{precio_max}}" aria-label="Precio máximo">
+         </div>
+
+      </div>
    </div>
 
 
